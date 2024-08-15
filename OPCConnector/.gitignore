@@ -71,6 +71,8 @@ buildNumber.properties
 # mpeltonen/sbt-idea plugin
 .idea_modules/
 
+/test/
+
 # JIRA plugin
 atlassian-ide-plugin.xml
 
