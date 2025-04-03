@@ -1,14 +1,11 @@
 package com.wan.entity;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.log4j.Log4j2;
 import org.apache.tomcat.websocket.WsRemoteEndpointAsync;
 import org.springframework.stereotype.Component;
 
 import javax.websocket.*;
 import javax.websocket.server.PathParam;
-import javax.websocket.server.ServerEndpoint;
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,10 +14,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * @date 2024-08-12
  * @description
  */
-
+@Deprecated
 @Component
 @Log4j2
-@ServerEndpoint("/websocket/{clientId}")
+//@ServerEndpoint("/websocket/{clientId}")
 public class WebSocket {
 
     private static final ConcurrentHashMap<String, Session> SESSION_MAP = new ConcurrentHashMap<>();
@@ -127,11 +124,11 @@ public class WebSocket {
 
     /**
      * 关闭连接
+     *
      * @param clientId 客户端id
      */
     public void close(String clientId) {
-        if (!SESSION_MAP.containsKey(clientId))
-        {
+        if (!SESSION_MAP.containsKey(clientId)) {
             log.warn("【WebSocket消息】关闭连接失败，客户端id不存在");
             return;
         }

@@ -4,10 +4,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wan.entity.DataPoint;
 import com.wan.entity.Node;
-import com.wan.entity.WebSocket;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.log4j.Log4j2;
+import org.jetbrains.annotations.NotNull;
 import org.jinterop.dcom.common.JIErrorCodes;
 import org.jinterop.dcom.common.JIException;
 import org.jinterop.dcom.core.JISession;
@@ -23,11 +23,16 @@ import org.openscada.opc.lib.da.browser.TreeBrowser;
 import org.openscada.opc.lib.list.Categories;
 import org.openscada.opc.lib.list.Category;
 import org.openscada.opc.lib.list.ServerList;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.net.UnknownHostException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 
 /**
@@ -75,13 +80,7 @@ public class OpcDaService {
         try {
             ServerList serverList = new ServerList(session, host);
 
-            servers = serverList.listServersWithDetails(new Category[]{
-                            Categories.OPCDAServer10,
-                            Categories.OPCDAServer20,
-                            Categories.OPCDAServer30
-                    },
-                    new Category[]{}
-            );
+            servers = serverList.listServersWithDetails(new Category[]{Categories.OPCDAServer10, Categories.OPCDAServer20, Categories.OPCDAServer30}, new Category[]{});
         } catch (UnknownHostException e) {
             log.error(e);
             throw new RuntimeException("目标主机错误：" + host + ", 请输入正确的服务器地址！");
@@ -129,19 +128,26 @@ public class OpcDaService {
                 log.warn("OPC DA 服务器已经连接，请勿重复创建连接!");
             }
         }
-        // 监听连接状态,断开时自动重连
-//        server.addStateListener(connected -> {
-//            if (!connected) {
-//                log.warn("OPC DA 服务器连接断开，正在准备重连...");
-//                connect(host, user, password, clsId);
-//            }
-//        });
     }
 
     /**
      * 断开OPC DA server连接
      */
-    public void disconnect() {
+    public void disconnect(String clientId) {
+        if (!baseMap.containsKey(clientId)) {
+            return;
+        }
+        AccessBase base = baseMap.get(clientId);
+        try {
+            base.clear();
+            base.unbind();
+        } catch (JIException e) {
+            log.error("解除绑定失败：" + e.getMessage());
+            throw new RuntimeException("断开服务器操作错误,请重试");
+        }
+    }
+
+    private void disConnectServer() {
         if (server == null) {
             return;
         }
@@ -155,6 +161,7 @@ public class OpcDaService {
      *
      * @return 数据点列表
      */
+    @Deprecated
     public List<String> getItemListAll() {
         connect(host, user, password, clsId);
         FlatBrowser browser = server.getFlatBrowser();
@@ -171,7 +178,7 @@ public class OpcDaService {
             log.error(e);
             throw new RuntimeException("获取数据点列表出错：请检查用户名密码是否正确！");
         } finally {
-            disconnect();
+            disConnectServer();
         }
         if (browse == null) {
             return Collections.emptyList();
@@ -212,7 +219,7 @@ public class OpcDaService {
             log.error(e);
             throw new RuntimeException("获取数据点列表出错：请检查用户名密码是否正确！");
         } finally {
-            disconnect();
+            disConnectServer();
         }
         nodes.add(root);
         return nodes;
@@ -252,26 +259,27 @@ public class OpcDaService {
     @Resource
     private ObjectMapper objectMapper;
 
-    @Resource
-    private WebSocket webSocket;
+    @Getter
+    private ConcurrentHashMap<String, AccessBase> baseMap = new ConcurrentHashMap<>();
 
-    private AccessBase base;
+    @Resource
+    SimpMessagingTemplate simpMessagingTemplate;
 
     /**
-     * 同步读取实时值
+     * 同步读取实时值(单条数据)
      *
      * @param refreshRate 刷新频率
      * @param item        数据点
      * @param clientId    客户端ID
      */
-    public void syncRead(
-            Integer refreshRate,
-            String item,
-            String clientId) {
+    public AccessBase syncRead(Integer refreshRate, @NotNull String item, @NotNull String clientId) {
         if (!isConnect) {
             connect(host, user, password, clsId);
         }
-        if (base == null) {
+        AccessBase base;
+        if (baseMap.containsKey(clientId)) {
+            base = baseMap.get(clientId);
+        } else {
             try {
                 base = new SyncAccess(server, refreshRate);
             } catch (UnknownHostException e) {
@@ -293,32 +301,54 @@ public class OpcDaService {
                 DataPoint dataPoint = new DataPoint();
                 dataPoint.setName(item1.getId());
                 dataPoint.setId(item1.getId());
+                String json;
                 try {
-                    String json;
-                    dataPoint.setValue(getValueByType(item1));
-                    dataPoint.setTimestamp(itemState.getTimestamp().getTimeInMillis());
-                    dataPoint.setQuality(itemState.getQuality());
-                    json = objectMapper.writeValueAsString(dataPoint);
-                    webSocket.sendMessageAsync(clientId, json);
-                } catch (JsonProcessingException e) {
-                    log.error("转换数据点为json失败：" + dataPoint);
-                    throw new RuntimeException(e);
+                    dataPoint.setValue(getValueByType(item1.read(true).getValue()));
                 } catch (JIException e) {
                     throw new RuntimeException(e);
                 }
+                dataPoint.setTimestamp(itemState.getTimestamp().getTimeInMillis());
+                dataPoint.setQuality(itemState.getQuality());
+                try {
+                    json = objectMapper.writeValueAsString(dataPoint);
+                } catch (JsonProcessingException e) {
+                    log.error("转换数据点为json失败：" + dataPoint);
+                    throw new RuntimeException(e);
+                }
+                simpMessagingTemplate.convertAndSend("/topic/opc/realtime", json);
             });
+            baseMap.put(clientId, base);
         } catch (JIException e) {
             throw new RuntimeException(e);
         } catch (AddFailedException e) {
             log.error("添加数据点失败：" + item);
             throw new RuntimeException(e);
         }
+        return base;
+    }
+
+    /**
+     * 移除数据点
+     *
+     * @param clientId 客户端Id
+     * @param item     数据点
+     */
+    public void removeItem(String clientId, String item) {
+        if (!baseMap.containsKey(clientId)) {
+            return;
+        }
+        AccessBase base = baseMap.get(clientId);
+        base.removeItem(item);
     }
 
     /**
      * 同步读取实时值绑定
      */
-    public void bind() {
+    public void bind(String clientId) {
+        if (!baseMap.containsKey(clientId)) {
+            return;
+        }
+        AccessBase base = baseMap.get(clientId);
         if (base == null || base.isBound()) {
             // 如果base为空或已激活，则直接返回
             return;
@@ -330,13 +360,16 @@ public class OpcDaService {
      * 解除绑定
      */
     public void unbound(String clientId) {
+        if (!baseMap.containsKey(clientId)) {
+            return;
+        }
+        AccessBase base = baseMap.get(clientId);
         if (base == null || !base.isBound()) {
             // 如果base为空或未激活，则直接返回
             return;
         }
         try {
             base.unbind();
-            webSocket.close(clientId);
         } catch (JIException e) {
             log.error("解除绑定失败：" + e.getMessage());
             throw new RuntimeException("服务器出现错误，请稍后重试，{}", e);
@@ -371,8 +404,7 @@ public class OpcDaService {
      * @return Object
      * @throws JIException 异常
      */
-    private Object getValueByType(Item itemState) throws JIException {
-        JIVariant var = itemState.read(true).getValue();
+    private Object getValueByType(JIVariant var) throws JIException {
         int variantType = var.getType();
         return switch (variantType) {
             case JIVariant.VT_I2 -> var.getObjectAsShort();

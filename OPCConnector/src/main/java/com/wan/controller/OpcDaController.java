@@ -6,11 +6,12 @@ import com.wan.service.OpcDaService;
 import com.wan.util.RestResponse;
 import com.wan.vo.OnlineDataInfo;
 import com.wan.vo.ServerInfoVo;
+import org.jetbrains.annotations.NotNull;
 import org.openscada.opc.dcom.list.ClassDetails;
+import org.openscada.opc.lib.da.AccessBase;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -59,25 +60,47 @@ public class OpcDaController {
                 serverInfoVo.getUserName(), serverInfoVo.getPassword(), serverInfoVo.getClsid()));
     }
 
-    @PostMapping("/read")
-    public RestResponse<String> read(@RequestBody OnlineDataInfo dataInfo) {
-            daService.syncRead(
-                    dataInfo.getRefreshRate(),
-                    dataInfo.getItem(),
-                    dataInfo.getClientId());
-            daService.bind();
+    @PostMapping("/add")
+    public RestResponse<String> add(@RequestBody @NotNull OnlineDataInfo dataInfo) {
+        String clientId = dataInfo.getClientId();
+        AccessBase base = daService.syncRead(
+                dataInfo.getRefreshRate(),
+                dataInfo.getItem(),
+                clientId);
+        if (base == null) {
+            throw new RuntimeException("创建AccessBase失败，请稍后重试");
+        }
+        if (!base.isBound()) {
+            daService.bind(clientId);
+        }
+
         return RestResponse.success("点位读取正常，请连接webSocket查看数据");
     }
 
-    @GetMapping("/start")
-    public RestResponse<String> start() {
-        daService.bind();
-        return RestResponse.success("点位停止读取");
+    @PostMapping("/remove")
+    public RestResponse<String> remove(@RequestBody @NotNull OnlineDataInfo dataInfo) {
+        daService.removeItem(dataInfo.getClientId(), dataInfo.getItem());
+        return RestResponse.success("点位开始读取");
+    }
+
+    @GetMapping("/start/{clientId}")
+    public RestResponse<String> start(@PathVariable String clientId) {
+        if (clientId.isEmpty()) {
+            throw new RuntimeException("clientId不能为空");
+        }
+        daService.bind(clientId);
+        return RestResponse.success("点位开始读取");
     }
 
     @GetMapping("/stop/{clientId}")
-    public RestResponse<String> stop(@PathVariable(value = "clientId") String clientId) {
+    public RestResponse<String> stop(@PathVariable String clientId) {
         daService.unbound(clientId);
         return RestResponse.success("点位停止读取");
+    }
+
+    @GetMapping("/disConnect/{clientId}")
+    public RestResponse<String> disConnect(@PathVariable String clientId) {
+        daService.disconnect(clientId);
+        return RestResponse.success("关闭连接");
     }
 }
