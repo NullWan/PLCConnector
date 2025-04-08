@@ -18,7 +18,7 @@ hs_err_pid*
 # 解决maven产生的文件
 ######################
 
-target/
+OPCConnector/target/
 **/target/
 pom.xml.tag
 pom.xml.releaseBackup

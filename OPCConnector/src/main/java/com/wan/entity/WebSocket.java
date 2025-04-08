@@ -1,11 +1,11 @@
 package com.wan.entity;
 
+import jakarta.websocket.*;
+import jakarta.websocket.server.PathParam;
 import lombok.extern.log4j.Log4j2;
 import org.apache.tomcat.websocket.WsRemoteEndpointAsync;
 import org.springframework.stereotype.Component;
 
-import javax.websocket.*;
-import javax.websocket.server.PathParam;
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 

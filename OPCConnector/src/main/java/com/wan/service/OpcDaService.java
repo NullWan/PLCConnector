@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wan.entity.DataPoint;
 import com.wan.entity.Node;
+import jakarta.annotation.Resource;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.log4j.Log4j2;
@@ -26,7 +27,6 @@ import org.openscada.opc.lib.list.ServerList;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collection;

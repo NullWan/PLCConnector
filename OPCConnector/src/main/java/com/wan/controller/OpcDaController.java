@@ -6,12 +6,12 @@ import com.wan.service.OpcDaService;
 import com.wan.util.RestResponse;
 import com.wan.vo.OnlineDataInfo;
 import com.wan.vo.ServerInfoVo;
+import jakarta.annotation.Resource;
 import org.jetbrains.annotations.NotNull;
 import org.openscada.opc.dcom.list.ClassDetails;
 import org.openscada.opc.lib.da.AccessBase;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.Resource;
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
